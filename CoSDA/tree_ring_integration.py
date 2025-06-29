@@ -17,8 +17,7 @@ import os
 sys.path.append(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
 from CoSDA import CoSDAStableDiffusionPipeline, DriftAlignmentNetwork, create_distortions, evaluate_inversion_error
-from optim_utils import get_watermarking_mask, inject_watermark, eval_watermark
-from io_utils import transform_img
+from optim_utils import get_watermarking_mask, inject_watermark, eval_watermark, transform_img
 
 
 class CoSDATreeRingWatermarker:

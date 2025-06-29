@@ -20,7 +20,7 @@ from CoSDA import CoSDAStableDiffusionPipeline, DriftAlignmentNetwork
 from CoSDA.tree_ring_integration import CoSDATreeRingWatermarker
 from CoSDA.utils import create_distortions, compute_watermark_detection_metrics
 from diffusers import DDIMScheduler
-from io_utils import transform_img
+from optim_utils import transform_img
 
 
 def load_drift_alignment_network(checkpoint_path: str, device: str = "cuda") -> DriftAlignmentNetwork:
