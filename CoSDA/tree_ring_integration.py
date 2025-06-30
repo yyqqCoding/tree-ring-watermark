@@ -82,18 +82,35 @@ class CoSDATreeRingWatermarker:
         Returns:
             Dictionary containing generated images and latents
         """
-        # Generate initial latents
+        # Generate initial latents with correct dtype
         shape = (1, 4, height // 8, width // 8)
-        init_latents = torch.randn(shape, generator=generator, device=self.device)
-        
+        init_latents = torch.randn(shape, generator=generator, device=self.device, dtype=self.pipeline.unet.dtype)
+
+        # Convert watermark_args dict to object for compatibility with optim_utils functions
+        args_obj = type('Args', (), watermark_args)()
+
         # Get watermarking mask and pattern
-        watermarking_mask = get_watermarking_mask(init_latents, watermark_args, self.device)
+        watermarking_mask = get_watermarking_mask(init_latents, args_obj, self.device)
+        # Ensure watermarking_mask is on the correct device
+        watermarking_mask = watermarking_mask.to(device=self.device)
+        # Ensure watermarking_mask is on the correct device
+        watermarking_mask = watermarking_mask.to(device=self.device)
         
-        # Create watermark pattern
-        gt_patch = self._create_watermark_pattern(shape, watermark_args, generator)
-        
+        # Create watermark pattern using the original Tree-Ring method
+        from optim_utils import get_watermarking_pattern
+        gt_patch = get_watermarking_pattern(None, args_obj, self.device, shape)
+        # Note: gt_patch is complex from FFT operations, keep it as is for inject_watermark
+
         # Inject watermark into initial latents
-        watermarked_latents = inject_watermark(init_latents, watermarking_mask, gt_patch, watermark_args)
+        # Convert to float32 for FFT operations to avoid ComplexHalf issues
+        original_dtype = init_latents.dtype
+        init_latents_f32 = init_latents.to(torch.float32)
+        gt_patch_f32 = gt_patch.to(torch.complex64) if gt_patch.is_complex() else gt_patch.to(torch.float32)
+
+        watermarked_latents = inject_watermark(init_latents_f32, watermarking_mask, gt_patch_f32, args_obj)
+
+        # Convert back to original dtype
+        watermarked_latents = watermarked_latents.to(original_dtype)
         
         # Generate image with CoSDA pipeline
         result = self.pipeline(
@@ -150,13 +167,16 @@ class CoSDATreeRingWatermarker:
         inverted_latents = inversion_result['latents']
         inversion_metrics = inversion_result['metrics']
         
+        # Convert watermark_args dict to object for compatibility
+        args_obj = type('Args', (), watermark_args)()
+
         # Evaluate watermark
         watermark_metric = eval_watermark(
             reversed_latents_no_w=torch.zeros_like(inverted_latents),  # Placeholder
             reversed_latents_w=inverted_latents,
             watermarking_mask=watermarking_mask,
             gt_patch=gt_patch,
-            args=watermark_args
+            args=args_obj
         )[1]  # Get watermarked metric
         
         return {

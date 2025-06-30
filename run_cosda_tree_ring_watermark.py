@@ -23,6 +23,18 @@ from CoSDA import CoSDAStableDiffusionPipeline, DriftAlignmentNetwork
 from CoSDA.tree_ring_integration import CoSDATreeRingWatermarker
 from CoSDA.utils import create_cosda_config
 from diffusers import DDIMScheduler
+import open_clip
+
+
+def get_reference_model(reference_model, reference_model_pretrain, device):
+    """Load reference model for CLIP evaluation."""
+    ref_model, _, ref_clip_preprocess = open_clip.create_model_and_transforms(
+        reference_model,
+        pretrained=reference_model_pretrain,
+        device=device
+    )
+    ref_tokenizer = open_clip.get_tokenizer(reference_model)
+    return ref_model, ref_clip_preprocess, ref_tokenizer
 
 
 def load_cosda_pipeline(args):
@@ -92,13 +104,16 @@ def main(args):
         prompts = [f"prompt_{i}" for i in range(args.start, args.end)]
     
     # Watermark configuration
-    watermark_args = type('Args', (), {
+    watermark_args = {
+        'w_seed': args.w_seed,
         'w_channel': args.w_channel,
         'w_radius': args.w_radius,
         'w_pattern': args.w_pattern,
-        'w_injection': 'complex',
-        'w_measurement': 'complex'
-    })()
+        'w_mask_shape': args.w_mask_shape,
+        'w_injection': args.w_injection,
+        'w_measurement': args.w_measurement,
+        'w_pattern_const': args.w_pattern_const
+    }
     
     # Results storage
     results = []
@@ -286,9 +301,14 @@ if __name__ == '__main__':
     parser.add_argument('--drift_alignment_checkpoint', default='./cosda_checkpoints/best_drift_alignment.pth', help='Path to drift alignment checkpoint')
     
     # Watermarking settings
+    parser.add_argument('--w_seed', type=int, default=999999)
     parser.add_argument('--w_channel', type=int, default=0)
     parser.add_argument('--w_radius', type=int, default=10)
     parser.add_argument('--w_pattern', default='ring')
+    parser.add_argument('--w_mask_shape', default='circle')
+    parser.add_argument('--w_measurement', default='l1_complex')
+    parser.add_argument('--w_injection', default='complex')
+    parser.add_argument('--w_pattern_const', type=float, default=0)
     
     # Generation settings
     parser.add_argument('--num_inference_steps', type=int, default=50)
@@ -302,6 +322,18 @@ if __name__ == '__main__':
     parser.add_argument('--run_name', default='cosda_evaluation')
     parser.add_argument('--dataset', default='Gustavosta/Stable-Diffusion-Prompts')
     parser.add_argument('--attack_mode', default='no_attack')
+    parser.add_argument('--image_length', type=int, default=512)
+    parser.add_argument('--num_images', type=int, default=1)
+
+    # Image distortion parameters
+    parser.add_argument('--r_degree', type=float, default=None)
+    parser.add_argument('--jpeg_ratio', type=int, default=None)
+    parser.add_argument('--crop_scale', type=float, default=None)
+    parser.add_argument('--crop_ratio', type=float, default=None)
+    parser.add_argument('--gaussian_blur_r', type=int, default=None)
+    parser.add_argument('--gaussian_std', type=float, default=None)
+    parser.add_argument('--brightness_factor', type=float, default=None)
+    parser.add_argument('--rand_aug', type=int, default=0)
     
     # Reference model for CLIP evaluation
     parser.add_argument('--reference_model', default=None)
@@ -312,5 +344,9 @@ if __name__ == '__main__':
     parser.add_argument('--max_num_log_image', type=int, default=100)
     
     args = parser.parse_args()
-    
+
+    # Set default test_num_inference_steps if not provided
+    if args.test_num_inference_steps is None:
+        args.test_num_inference_steps = args.num_inference_steps
+
     main(args)
