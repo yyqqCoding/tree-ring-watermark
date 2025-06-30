@@ -3,6 +3,16 @@ CoSDA Tree-Ring Watermarking Evaluation Script
 
 This script runs the same evaluation as run_tree_ring_watermark.py but with CoSDA optimizations.
 It provides a direct comparison between baseline Tree-Ring and CoSDA-enhanced methods.
+
+Key Features:
+1. CoSDA-enhanced Stable Diffusion pipeline for improved robustness
+2. Compensation Sampling (CoS) to reduce condition mismatch errors
+3. Drift Alignment Network (DA) to correct latent feature drift
+4. Comprehensive evaluation with wandb tracking
+5. Support for various watermark patterns and distortions
+
+Author: Based on CoSDA paper implementation
+Date: 2024
 """
 
 import argparse
@@ -13,6 +23,29 @@ from tqdm import tqdm
 import copy
 import os
 import sys
+import logging
+
+# 设置详细的日志配置
+logging.basicConfig(
+    level=logging.INFO,
+    format='%(asctime)s - %(levelname)s - %(funcName)s:%(lineno)d - %(message)s',
+    handlers=[
+        logging.FileHandler('cosda_evaluation.log'),
+        logging.StreamHandler()
+    ]
+)
+logger = logging.getLogger(__name__)
+import logging
+
+# 设置日志配置
+logging.basicConfig(
+    level=logging.INFO,
+    format='%(asctime)s - %(levelname)s - %(message)s',
+    handlers=[
+        logging.FileHandler('cosda_evaluation.log'),
+        logging.StreamHandler()
+    ]
+)
 
 # Import existing Tree-Ring components
 from optim_utils import *
@@ -38,13 +71,27 @@ def get_reference_model(reference_model, reference_model_pretrain, device):
 
 
 def load_cosda_pipeline(args):
-    """Load CoSDA-enhanced pipeline."""
-    print("Loading CoSDA-enhanced Stable Diffusion pipeline...")
-    
-    # Load scheduler
+    """
+    Load CoSDA-enhanced Stable Diffusion pipeline.
+
+    Args:
+        args: Command line arguments containing model configuration
+
+    Returns:
+        tuple: (pipeline, drift_alignment_network)
+    """
+    logger.info("开始加载 CoSDA 增强的 Stable Diffusion 管道...")
+    logger.info(f"模型ID: {args.model_id}")
+    logger.info(f"设备: {args.device}")
+    logger.info(f"数据类型: {'float16' if args.device == 'cuda' else 'float32'}")
+
+    # 加载调度器
+    logger.info("正在加载 DDIM 调度器...")
     scheduler = DDIMScheduler.from_pretrained(args.model_id, subfolder="scheduler")
-    
-    # Load CoSDA pipeline
+    logger.info("DDIM 调度器加载完成")
+
+    # 加载 CoSDA 管道
+    logger.info("正在加载 CoSDA 管道组件...")
     pipeline = CoSDAStableDiffusionPipeline.from_pretrained(
         args.model_id,
         scheduler=scheduler,
@@ -53,26 +100,52 @@ def load_cosda_pipeline(args):
         requires_safety_checker=False,
     )
     pipeline = pipeline.to(args.device)
+    logger.info(f"CoSDA 管道已加载到设备: {args.device}")
     
-    # Load Drift Alignment Network if available
+    # 加载漂移对齐网络（如果可用）
     drift_alignment_network = None
     if args.drift_alignment_checkpoint and os.path.exists(args.drift_alignment_checkpoint):
-        print(f"Loading Drift Alignment Network from {args.drift_alignment_checkpoint}")
+        logger.info(f"正在从 {args.drift_alignment_checkpoint} 加载漂移对齐网络...")
         drift_alignment_network = DriftAlignmentNetwork(in_channels=4, hidden_channels=64)
         checkpoint = torch.load(args.drift_alignment_checkpoint, map_location=args.device)
         drift_alignment_network.load_state_dict(checkpoint['model_state_dict'])
         drift_alignment_network = drift_alignment_network.to(args.device)
-    
+        drift_alignment_network.eval()
+        logger.info("漂移对齐网络加载成功")
+    else:
+        logger.warning("未找到漂移对齐网络检查点，使用基础 CoSDA")
+        logger.info(f"检查点路径: {args.drift_alignment_checkpoint}")
+
+    logger.info("CoSDA 管道加载完成")
     return pipeline, drift_alignment_network
 
 
 def main(args):
-    """Main evaluation function with CoSDA optimizations."""
-    
-    # Set random seed
+    """
+    主要的评估函数，使用 CoSDA 优化。
+
+    Args:
+        args: 命令行参数，包含所有配置选项
+    """
+    logger.info("="*60)
+    logger.info("开始 CoSDA Tree-Ring 水印评估")
+    logger.info("="*60)
+    logger.info(f"运行名称: {args.run_name}")
+    logger.info(f"评估范围: {args.start} - {args.end} (共 {args.end - args.start} 个样本)")
+    logger.info(f"水印通道: {args.w_channel}")
+    logger.info(f"水印模式: {args.w_pattern}")
+    logger.info(f"水印半径: {args.w_radius}")
+    logger.info(f"补偿参数: {args.compensation_p}")
+    logger.info(f"推理步数: {args.num_inference_steps}")
+    logger.info(f"引导尺度: {args.guidance_scale}")
+    logger.info(f"设备: {args.device}")
+
+    # 设置随机种子
+    logger.info(f"设置随机种子: {args.gen_seed}")
     set_random_seed(args.gen_seed)
-    
-    # Load CoSDA pipeline
+
+    # 加载 CoSDA 管道
+    logger.info("正在加载 CoSDA 管道...")
     pipeline, drift_alignment_network = load_cosda_pipeline(args)
     
     # Initialize CoSDA watermarker
