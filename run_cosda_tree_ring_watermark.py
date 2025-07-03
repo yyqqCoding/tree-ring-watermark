@@ -87,18 +87,48 @@ def load_cosda_pipeline(args):
 
     # 加载调度器
     logger.info("正在加载 DDIM 调度器...")
-    scheduler = DDIMScheduler.from_pretrained(args.model_id, subfolder="scheduler")
+    try:
+        scheduler = DDIMScheduler.from_pretrained(args.model_id, subfolder="scheduler", local_files_only=True)
+        logger.info("从本地缓存加载 DDIM 调度器成功")
+    except Exception as e:
+        logger.warning(f"从本地缓存加载调度器失败: {e}")
+        logger.info("尝试使用默认调度器配置...")
+        scheduler = DDIMScheduler(
+            num_train_timesteps=1000,
+            beta_start=0.00085,
+            beta_end=0.012,
+            beta_schedule="scaled_linear",
+            clip_sample=False,
+            set_alpha_to_one=False,
+            steps_offset=1,
+            prediction_type="epsilon",
+        )
     logger.info("DDIM 调度器加载完成")
 
     # 加载 CoSDA 管道
     logger.info("正在加载 CoSDA 管道组件...")
-    pipeline = CoSDAStableDiffusionPipeline.from_pretrained(
-        args.model_id,
-        scheduler=scheduler,
-        torch_dtype=torch.float16 if args.device == "cuda" else torch.float32,
-        safety_checker=None,
-        requires_safety_checker=False,
-    )
+    try:
+        pipeline = CoSDAStableDiffusionPipeline.from_pretrained(
+            args.model_id,
+            scheduler=scheduler,
+            torch_dtype=torch.float16 if args.device == "cuda" else torch.float32,
+            safety_checker=None,
+            requires_safety_checker=False,
+            local_files_only=True,  # 只使用本地文件
+            low_cpu_mem_usage=True,  # 减少CPU内存使用
+        )
+        logger.info("从本地缓存加载管道成功")
+    except Exception as e:
+        logger.error(f"从本地缓存加载管道失败: {e}")
+        raise RuntimeError("无法加载模型，请检查本地缓存或网络连接")
+
+    # 启用内存优化
+    if args.device == "cuda":
+        pipeline.enable_model_cpu_offload()  # 将模型组件卸载到CPU
+        pipeline.enable_attention_slicing()  # 启用注意力切片
+        pipeline.enable_vae_slicing()  # 启用VAE切片
+        logger.info("已启用内存优化选项")
+
     pipeline = pipeline.to(args.device)
     logger.info(f"CoSDA 管道已加载到设备: {args.device}")
     
