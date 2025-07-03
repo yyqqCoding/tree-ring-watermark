@@ -122,12 +122,30 @@ def load_cosda_pipeline(args):
         logger.error(f"从本地缓存加载管道失败: {e}")
         raise RuntimeError("无法加载模型，请检查本地缓存或网络连接")
 
-    # 启用内存优化
+    # 启用内存优化（检查方法是否存在）
     if args.device == "cuda":
-        pipeline.enable_model_cpu_offload()  # 将模型组件卸载到CPU
-        pipeline.enable_attention_slicing()  # 启用注意力切片
-        pipeline.enable_vae_slicing()  # 启用VAE切片
-        logger.info("已启用内存优化选项")
+        try:
+            if hasattr(pipeline, 'enable_model_cpu_offload'):
+                pipeline.enable_model_cpu_offload()  # 将模型组件卸载到CPU
+                logger.info("已启用模型CPU卸载")
+        except Exception as e:
+            logger.warning(f"无法启用模型CPU卸载: {e}")
+
+        try:
+            if hasattr(pipeline, 'enable_attention_slicing'):
+                pipeline.enable_attention_slicing()  # 启用注意力切片
+                logger.info("已启用注意力切片")
+        except Exception as e:
+            logger.warning(f"无法启用注意力切片: {e}")
+
+        try:
+            if hasattr(pipeline, 'enable_vae_slicing'):
+                pipeline.enable_vae_slicing()  # 启用VAE切片
+                logger.info("已启用VAE切片")
+        except Exception as e:
+            logger.warning(f"无法启用VAE切片: {e}")
+
+        logger.info("内存优化设置完成")
 
     pipeline = pipeline.to(args.device)
     logger.info(f"CoSDA 管道已加载到设备: {args.device}")
